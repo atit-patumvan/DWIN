@@ -19,7 +19,7 @@ public:
 
     // DGUS protocol communication
     void sendFloat(uint16_t vp, float f);
-    void sendInt(byte number);
+    void sendInt16(uint16_t vp, int16_t value);
     void sendCurve(byte number);
     void clearCurve();
     void pageSwitch(byte pageNo);
@@ -36,6 +36,7 @@ public:
     void setBuzzer(bool on);
     // Helper: format a 16-bit value as "0x0000"
     static String toHex16(uint16_t value);
+    void writeString(uint16_t vp, const String& text, uint8_t maxLen);
 
 private:
     uint8_t _rxPin, _txPin;

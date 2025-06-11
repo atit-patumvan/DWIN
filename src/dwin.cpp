@@ -33,15 +33,38 @@ void Dwin::sendFloat(uint16_t vp, float f) {
     }
 }
 
-// Send integer (1 byte) value to DWIN
-void Dwin::sendInt(byte number) {
-    byte open[8] = {0x5A, 0xA5, 0x05, 0x82, 0x11, 0x00, 0x00, number};
-    Serial2.write(open, sizeof(open));
-    delay(50);
+void Dwin::sendInt16(uint16_t vp, int16_t value) {
+    // Frame format:
+    // [0] 0x5A
+    // [1] 0xA5
+    // [2] LL   = number of bytes from CMD to last data byte (6 here)
+    // [3] CMD  = 0x82 (write variable)
+    // [4] SUB  = 0x11 (write integer)
+    // [5] VP_H = high byte of vp
+    // [6] VP_L = low  byte of vp
+    // [7] DAT_H = high byte of value
+    // [8] DAT_L = low  byte of value
+
+    byte frame[8];
+    frame[0] = 0x5A;
+    frame[1] = 0xA5;
+    frame[2] = 0x05;              // length = CMD + SUB + ADDRH + ADDRL + DATAH + DATAL = 6 bytes
+    frame[3] = 0x82;              // write command
+    frame[4] = highByte(vp);      // VP address high
+    frame[5] = lowByte(vp);       // VP address low
+    frame[6] = highByte(value);   // data high
+    frame[7] = lowByte(value);    // data low
+
+    Serial2.write(frame, sizeof(frame));
+    delay(20);
+
+    // Drain any ACK bytes (0x5A/0xA5) so next read isn’t confused
     while (Serial2.available()) {
-        int inhex = Serial2.read();
-        if (inhex == 0x5A || inhex == 0xA5) continue;
+      int b = Serial2.read();
+      if (b == 0x5A || b == 0xA5) continue;
     }
+
+    Serial.println("Data send");
 }
 
 // Send curve data
@@ -189,4 +212,33 @@ String Dwin::toHex16(uint16_t value) {
     char buf[7];               // "0x" + 4 hex digits + '\0'
     sprintf(buf, "0x%04X", value);
     return String(buf);
+}
+
+void Dwin::writeString(uint16_t vp, const String& text, uint8_t maxLen) {
+    // ---- 1. Header ----
+    uint8_t frameLen = 3 + maxLen; // CMD + ADDRH + ADDRL + DATA(maxLen)
+    byte header[6] = {
+        0x5A, 0xA5,
+        frameLen,
+        0x82,                   // write-variable command
+        uint8_t(vp >> 8),       // VP high byte
+        uint8_t(vp & 0xFF)      // VP low byte
+    };
+    Serial2.write(header, sizeof(header));
+
+    // ---- 2. Payload ----
+    uint8_t actualLen = min((uint8_t)text.length(), maxLen);
+    Serial2.write((const uint8_t*)text.c_str(), actualLen);
+
+    // ---- 3. Padding ----
+    for (uint8_t i = actualLen; i < maxLen; i++) {
+        Serial2.write(0xFF);
+    }
+
+    // ---- 4. Sync ----
+    delay(20);
+    while (Serial2.available()) {
+        int b = Serial2.read();
+        if (b == 0x5A || b == 0xA5) continue;
+    }
 }
